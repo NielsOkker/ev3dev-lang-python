@@ -111,8 +111,7 @@ class FbMem(object):
             ]
 
             def __str__(self):
-                return "%s (offset %s, length %s, msg_right %s)" %\
-                    (self.__class__.__name__, self.offset, self.length, self.msb_right)
+                pass
 
         """The fb_var_screeninfo struct from fb.h."""
 
@@ -132,19 +131,13 @@ class FbMem(object):
         ]
 
         def __str__(self):
-            return ("%sx%s at (%s,%s), bpp %s, grayscale %s, red %s, green %s, blue %s, transp %s" %
-                    (self.xres, self.yres, self.xoffset, self.yoffset, self.bits_per_pixel, self.grayscale, self.red,
-                     self.green, self.blue, self.transp))
+            pass
 
     def __init__(self, fbdev=None):
         """Create the FbMem framebuffer memory object."""
-        fid = FbMem._open_fbdev(fbdev)
-        fix_info = FbMem._get_fix_info(fid)
-        fbmmap = FbMem._map_fb_memory(fid, fix_info)
-        self.fid = fid
-        self.fix_info = fix_info
-        self.var_info = FbMem._get_var_info(fid)
-        self.mmap = fbmmap
+
+        pass
+
 
     @staticmethod
     def _open_fbdev(fbdev=None):
@@ -153,28 +146,30 @@ class FbMem(object):
         Try to use the FRAMEBUFFER environment variable if fbdev is
         not given. Use '/dev/fb0' by default.
         """
-        dev = fbdev or os.getenv('FRAMEBUFFER', '/dev/fb0')
-        fbfid = os.open(dev, os.O_RDWR)
-        return fbfid
+
+        pass
+
 
     @staticmethod
     def _get_fix_info(fbfid):
         """Return the fix screen info from the framebuffer file descriptor."""
-        fix_info = FbMem.FixScreenInfo()
-        fcntl.ioctl(fbfid, FbMem.FBIOGET_FSCREENINFO, fix_info)
-        return fix_info
+
+        pass
+
 
     @staticmethod
     def _get_var_info(fbfid):
         """Return the var screen info from the framebuffer file descriptor."""
-        var_info = FbMem.VarScreenInfo()
-        fcntl.ioctl(fbfid, FbMem.FBIOGET_VSCREENINFO, var_info)
-        return var_info
+
+        pass
+
 
     @staticmethod
     def _map_fb_memory(fbfid, fix_info):
         """Map the framebuffer memory."""
-        return mmap.mmap(fbfid, fix_info.smem_len, mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE, offset=0)
+
+        pass
+
 
 
 class Display(FbMem):
@@ -191,50 +186,38 @@ class Display(FbMem):
     def __init__(self, desc='Display'):
         FbMem.__init__(self)
 
-        self.platform = get_current_platform()
-
-        if self.var_info.bits_per_pixel == 1:
-            im_type = "1"
-
-        elif self.platform == "ev3" and self.var_info.bits_per_pixel == 32:
-            im_type = "L"
-
-        elif self.var_info.bits_per_pixel == 16 or self.var_info.bits_per_pixel == 32:
-            im_type = "RGB"
-
-        else:
-            raise Exception("Not supported - platform %s with bits_per_pixel %s" %
-                            (self.platform, self.var_info.bits_per_pixel))
-
-        self._img = Image.new(im_type, (self.fix_info.line_length * 8 // self.var_info.bits_per_pixel, self.yres),
-                              "white")
-
-        self._draw = ImageDraw.Draw(self._img)
-        self.desc = desc
+        pass
 
     def __str__(self):
-        return self.desc
+        pass
+
 
     @property
     def xres(self):
         """
         Horizontal screen resolution
         """
-        return self.var_info.xres
+
+        pass
+
 
     @property
     def yres(self):
         """
         Vertical screen resolution
         """
-        return self.var_info.yres
+
+        pass
+
 
     @property
     def shape(self):
         """
         Dimensions of the screen.
         """
-        return (self.xres, self.yres)
+
+        pass
+
 
     @property
     def draw(self):
@@ -245,7 +228,9 @@ class Display(FbMem):
 
             screen.draw.rectangle((10,10,60,20), fill='black')
         """
-        return self._draw
+
+        pass
+
 
     @property
     def image(self):
@@ -257,79 +242,59 @@ class Display(FbMem):
 
             screen.image.paste(picture, (0, 0))
         """
-        return self._img
+
+        pass
+
 
     def clear(self):
         """
         Clears the screen
         """
-        self._draw.rectangle(((0, 0), self.shape), fill="white")
+
+        pass
+
 
     def _color565(self, r, g, b):
         """Convert red, green, blue components to a 16-bit 565 RGB value. Components
         should be values 0 to 255.
         """
-        return (((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3))
+
+        pass
+
 
     def _img_to_rgb565_bytes(self):
-        pixels = [self._color565(r, g, b) for (r, g, b) in self._img.getdata()]
-        return pack('H' * len(pixels), *pixels)
+
+        pass
+
 
     def update(self):
         """
         Applies pending changes to the screen.
         Nothing will be drawn on the screen until this function is called.
         """
-        if self.var_info.bits_per_pixel == 1:
-            b = self._img.tobytes("raw", "1;R")
-            self.mmap[:len(b)] = b
 
-        elif self.var_info.bits_per_pixel == 16:
-            self.mmap[:] = self._img_to_rgb565_bytes()
-
-        elif self.var_info.bits_per_pixel == 32:
-            self.mmap[:] = self._img.convert("RGB").tobytes("raw", "XRGB")
-
-        else:
-            raise Exception("Not supported - platform %s with bits_per_pixel %s" %
-                            (self.platform, self.var_info.bits_per_pixel))
+        pass
 
     def image_filename(self, filename, clear_screen=True, x1=0, y1=0, x2=None, y2=None):
 
-        if clear_screen:
-            self.clear()
+        pass
 
-        filename_im = Image.open(filename)
-
-        if x2 is not None and y2 is not None:
-            return self._img.paste(filename_im, (x1, y1, x2, y2))
-        else:
-            return self._img.paste(filename_im, (x1, y1))
 
     def line(self, clear_screen=True, x1=10, y1=10, x2=50, y2=50, line_color='black', width=1):
         """
         Draw a line from (x1, y1) to (x2, y2)
         """
 
-        if clear_screen:
-            self.clear()
+        pass
 
-        return self.draw.line((x1, y1, x2, y2), fill=line_color, width=width)
 
     def circle(self, clear_screen=True, x=50, y=50, radius=40, fill_color='black', outline_color='black'):
         """
         Draw a circle of 'radius' centered at (x, y)
         """
 
-        if clear_screen:
-            self.clear()
+        pass
 
-        x1 = x - radius
-        y1 = y - radius
-        x2 = x + radius
-        y2 = y + radius
-
-        return self.draw.ellipse((x1, y1, x2, y2), fill=fill_color, outline=outline_color)
 
     def rectangle(self, clear_screen=True, x1=10, y1=10, x2=80, y2=40, fill_color='black', outline_color='black'):
         """
@@ -337,20 +302,16 @@ class Display(FbMem):
         bottom right corner is at (x2, y2)
         """
 
-        if clear_screen:
-            self.clear()
+        pass
 
-        return self.draw.rectangle((x1, y1, x2, y2), fill=fill_color, outline=outline_color)
 
     def point(self, clear_screen=True, x=10, y=10, point_color='black'):
         """
         Draw a single pixel at (x, y)
         """
 
-        if clear_screen:
-            self.clear()
+        pass
 
-        return self.draw.point((x, y), fill=point_color)
 
     def text_pixels(self, text, clear_screen=True, x=0, y=0, text_color='black', font=None):
         """
@@ -375,16 +336,8 @@ class Display(FbMem):
 
         """
 
-        if clear_screen:
-            self.clear()
+        pass
 
-        if font is not None:
-            if isinstance(font, str):
-                assert font in fonts.available(), "%s is an invalid font" % font
-                font = fonts.load(font)
-            return self.draw.text((x, y), text, fill=text_color, font=font)
-        else:
-            return self.draw.text((x, y), text, fill=text_color)
 
     def text_grid(self, text, clear_screen=True, x=0, y=0, text_color='black', font=None):
         """
@@ -408,17 +361,9 @@ class Display(FbMem):
 
         """
 
-        assert 0 <= x < Display.GRID_COLUMNS,\
-            "grid columns must be between 0 and %d, %d was requested" %\
-            ((Display.GRID_COLUMNS - 1, x))
+        pass
 
-        assert 0 <= y < Display.GRID_ROWS,\
-            "grid rows must be between 0 and %d, %d was requested" %\
-            ((Display.GRID_ROWS - 1), y)
-
-        return self.text_pixels(text, clear_screen, x * Display.GRID_COLUMN_PIXELS, y * Display.GRID_ROW_PIXELS,
-                                text_color, font)
 
     def reset_screen(self):
-        self.clear()
-        self.update()
+
+        pass

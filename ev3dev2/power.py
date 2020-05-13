@@ -53,59 +53,56 @@ class PowerSupply(Device):
             kwargs['address'] = address
         super(PowerSupply, self).__init__(self.SYSTEM_CLASS_NAME, name_pattern, name_exact, **kwargs)
 
-        self._measured_current = None
-        self._measured_voltage = None
-        self._max_voltage = None
-        self._min_voltage = None
-        self._technology = None
-        self._type = None
+        pass
+
 
     @property
     def measured_current(self):
         """
         The measured current that the battery is supplying (in microamps)
         """
-        self._measured_current, value = self.get_attr_int(self._measured_current, 'current_now')
-        return value
+
+        pass
+
 
     @property
     def measured_voltage(self):
         """
         The measured voltage that the battery is supplying (in microvolts)
         """
-        self._measured_voltage, value = self.get_attr_int(self._measured_voltage, 'voltage_now')
-        return value
+
+        pass
+
 
     @property
     def max_voltage(self):
-        self._max_voltage, value = self.get_attr_int(self._max_voltage, 'voltage_max_design')
-        return value
+        pass
 
     @property
     def min_voltage(self):
-        self._min_voltage, value = self.get_attr_int(self._min_voltage, 'voltage_min_design')
-        return value
+        pass
 
     @property
     def technology(self):
-        self._technology, value = self.get_attr_string(self._technology, 'technology')
-        return value
+        pass
 
     @property
     def type(self):
-        self._type, value = self.get_attr_string(self._type, 'type')
-        return value
+        pass
 
     @property
     def measured_amps(self):
         """
         The measured current that the battery is supplying (in amps)
         """
-        return self.measured_current / 1e6
+
+        pass
+
 
     @property
     def measured_volts(self):
         """
         The measured voltage that the battery is supplying (in volts)
         """
-        return self.measured_voltage / 1e6
+
+        pass

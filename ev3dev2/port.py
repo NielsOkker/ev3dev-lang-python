@@ -79,12 +79,8 @@ class LegoPort(Device):
             kwargs['address'] = address
         super(LegoPort, self).__init__(self.SYSTEM_CLASS_NAME, name_pattern, name_exact, **kwargs)
 
-        self._address = None
-        self._driver_name = None
-        self._modes = None
-        self._mode = None
-        self._set_device = None
-        self._status = None
+        pass
+
 
     @property
     def address(self):
@@ -92,8 +88,9 @@ class LegoPort(Device):
         Returns the name of the port. See individual driver documentation for
         the name that will be returned.
         """
-        self._address, value = self.get_attr_string(self._address, 'address')
-        return value
+
+        pass
+
 
     @property
     def driver_name(self):
@@ -101,16 +98,18 @@ class LegoPort(Device):
         Returns the name of the driver that loaded this device. You can find the
         complete list of drivers in the [list of port drivers].
         """
-        (self._driver_name, value) = self.get_cached_attr_string(self._driver_name, 'driver_name')
-        return value
+
+        pass
+
 
     @property
     def modes(self):
         """
         Returns a list of the available modes of the port.
         """
-        (self._modes, value) = self.get_cached_attr_set(self._modes, 'modes')
-        return value
+
+        pass
+
 
     @property
     def mode(self):
@@ -120,12 +119,14 @@ class LegoPort(Device):
         associated with the port will be removed new ones loaded, however this
         this will depend on the individual driver implementing this class.
         """
-        self._mode, value = self.get_attr_string(self._mode, 'mode')
-        return value
+
+        pass
+
 
     @mode.setter
     def mode(self, value):
-        self._mode = self.set_attr_string(self._mode, 'mode', value)
+        pass
+
 
     @property
     def set_device(self):
@@ -138,9 +139,11 @@ class LegoPort(Device):
         """
         raise Exception("set_device is a write-only property!")
 
+
     @set_device.setter
     def set_device(self, value):
-        self._set_device = self.set_attr_string(self._set_device, 'set_device', value)
+        pass
+
 
     @property
     def status(self):
@@ -150,5 +153,5 @@ class LegoPort(Device):
         such as ``no-device`` or ``error``. See individual port driver documentation
         for the full list of possible values.
         """
-        self._status, value = self.get_attr_string(self._status, 'status')
-        return value
+
+        pass

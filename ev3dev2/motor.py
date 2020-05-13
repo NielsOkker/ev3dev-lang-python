@@ -26,43 +26,17 @@ import select
 import time
 import _thread
 
-# python3 uses collections
-# micropython uses ucollections
-try:
-    from collections import OrderedDict
-except ImportError:
-    from ucollections import OrderedDict
+from collections import OrderedDict
+
+from ev3dev2simulator.connector.MotorConnector import MotorConnector
+
 
 from logging import getLogger
 from os.path import abspath
-from ev3dev2 import get_current_platform, Device, list_device_names, DeviceNotDefined, ThreadNotRunning
+from ev3dev2 import Device, DeviceNotDefined, ThreadNotRunning
 from ev3dev2.stopwatch import StopWatch
 
-# OUTPUT ports have platform specific values that we must import
-platform = get_current_platform()
-
-if platform == 'ev3':
-    from ev3dev2._platform.ev3 import OUTPUT_A, OUTPUT_B, OUTPUT_C, OUTPUT_D  # noqa: F401
-
-elif platform == 'evb':
-    from ev3dev2._platform.evb import OUTPUT_A, OUTPUT_B, OUTPUT_C, OUTPUT_D  # noqa: F401
-
-elif platform == 'pistorms':
-    from ev3dev2._platform.pistorms import OUTPUT_A, OUTPUT_B, OUTPUT_C, OUTPUT_D  # noqa: F401
-
-elif platform == 'brickpi':
-    from ev3dev2._platform.brickpi import OUTPUT_A, OUTPUT_B, OUTPUT_C, OUTPUT_D  # noqa: F401
-
-elif platform == 'brickpi3':
-    from ev3dev2._platform.brickpi3 import (  # noqa: F401
-        OUTPUT_A, OUTPUT_B, OUTPUT_C, OUTPUT_D, OUTPUT_E, OUTPUT_F, OUTPUT_G, OUTPUT_H, OUTPUT_I, OUTPUT_J, OUTPUT_K,
-        OUTPUT_L, OUTPUT_M, OUTPUT_N, OUTPUT_O, OUTPUT_P)
-
-elif platform == 'fake':
-    from ev3dev2._platform.fake import OUTPUT_A, OUTPUT_B, OUTPUT_C, OUTPUT_D  # noqa: F401
-
-else:
-    raise Exception("Unsupported platform '%s'" % platform)
+from ev3dev2._platform.ev3 import OUTPUT_A, OUTPUT_B, OUTPUT_C, OUTPUT_D
 
 if sys.version_info < (3, 4):
     raise SystemError('Must be using Python 3.4 or higher')
@@ -76,7 +50,6 @@ WAIT_RUNNING_TIMEOUT = 100
 
 class SpeedInvalid(ValueError):
     pass
-
 
 class SpeedValue(object):
     """
@@ -387,53 +360,55 @@ class Motor(Device):
 
     def __init__(self, address=None, name_pattern=SYSTEM_DEVICE_NAME_CONVENTION, name_exact=False, **kwargs):
 
-        if platform in ('brickpi', 'brickpi3') and type(self).__name__ != 'Motor' and not isinstance(self, LargeMotor):
-            raise Exception("{} is unaware of different motor types, use LargeMotor instead".format(platform))
-
         if address is not None:
             kwargs['address'] = address
         super(Motor, self).__init__(self.SYSTEM_CLASS_NAME, name_pattern, name_exact, **kwargs)
 
-        self._address = None
+        self._address = address
         self._command = None
         self._commands = None
-        self._count_per_rot = None
-        self._count_per_m = None
-        self._driver_name = None
-        self._duty_cycle = None
-        self._duty_cycle_sp = None
-        self._full_travel_count = None
-        self._polarity = None
-        self._position = None
-        self._position_p = None
-        self._position_i = None
-        self._position_d = None
-        self._position_sp = None
-        self._max_speed = None
-        self._speed = None
-        self._speed_sp = None
-        self._ramp_up_sp = None
-        self._ramp_down_sp = None
-        self._speed_p = None
-        self._speed_i = None
-        self._speed_d = None
+        self._count_per_rot = 360  # 360
+        self._count_per_m = 200  # ?
+        self._driver_name = 'lego'  # lego-ev3-l-motor
+        self._duty_cycle = 1  # 0
+        self._duty_cycle_sp = 0  # 0
+        self._full_travel_count = 100  # ?
+        self._polarity = 'normal'  # 'normal'
+        self._position = 0  # 0
+        self._position_p = 0
+        self._position_i = 0
+        self._position_d = 0
+        self._position_sp = 0  # 0
+        self._max_speed = 1050  # 1050
+        self._speed = 10  # 0
+        self._speed_sp = 20
+        self._ramp_up_sp = 0  # Default
+        self._ramp_down_sp = 0  # Default
+        self._speed_p = 1
+        self._speed_i = 1
+        self._speed_d = 1
         self._state = None
         self._stop_action = None
         self._stop_actions = None
-        self._time_sp = None
+        self._time_sp = 0  # 0
         self._poll = None
         self.max_rps = float(self.max_speed / self.count_per_rot)
         self.max_rpm = self.max_rps * 60
         self.max_dps = self.max_rps * 360
         self.max_dpm = self.max_rpm * 360
 
+        self.connector = MotorConnector(self.address, self.max_speed)
+        self.running_until = time.time()
+
+
     @property
     def address(self):
         """
         Returns the name of the port that this motor is connected to.
         """
-        self._address, value = self.get_attr_string(self._address, 'address')
-        return value
+
+        return self._address
+
 
     @property
     def command(self):
@@ -445,7 +420,8 @@ class Motor(Device):
 
     @command.setter
     def command(self, value):
-        self._command = self.set_attr_string(self._command, 'command', value)
+        self._command = value
+
 
     @property
     def commands(self):
@@ -470,8 +446,9 @@ class Motor(Device):
         - ``reset`` will reset all of the motor parameter attributes to their default value.
           This will also have the effect of stopping the motor.
         """
-        (self._commands, value) = self.get_cached_attr_set(self._commands, 'commands')
-        return value
+
+        return self._commands
+
 
     @property
     def count_per_rot(self):
@@ -480,8 +457,9 @@ class Motor(Device):
         are used by the position and speed attributes, so you can use this value
         to convert rotations or degrees to tacho counts. (rotation motors only)
         """
-        (self._count_per_rot, value) = self.get_cached_attr_int(self._count_per_rot, 'count_per_rot')
-        return value
+
+        return self._count_per_rot
+
 
     @property
     def count_per_m(self):
@@ -490,16 +468,18 @@ class Motor(Device):
         counts are used by the position and speed attributes, so you can use this
         value to convert from distance to tacho counts. (linear motors only)
         """
-        (self._count_per_m, value) = self.get_cached_attr_int(self._count_per_m, 'count_per_m')
-        return value
+
+        return self._count_per_m
+
 
     @property
     def driver_name(self):
         """
         Returns the name of the driver that provides this tacho motor device.
         """
-        (self._driver_name, value) = self.get_cached_attr_string(self._driver_name, 'driver_name')
-        return value
+
+        return self._driver_name
+
 
     @property
     def duty_cycle(self):
@@ -507,8 +487,9 @@ class Motor(Device):
         Returns the current duty cycle of the motor. Units are percent. Values
         are -100 to 100.
         """
-        self._duty_cycle, value = self.get_attr_int(self._duty_cycle, 'duty_cycle')
-        return value
+
+        return self._duty_cycle
+
 
     @property
     def duty_cycle_sp(self):
@@ -517,12 +498,15 @@ class Motor(Device):
         Units are in percent. Valid values are -100 to 100. A negative value causes
         the motor to rotate in reverse.
         """
-        self._duty_cycle_sp, value = self.get_attr_int(self._duty_cycle_sp, 'duty_cycle_sp')
-        return value
+
+        return self._duty_cycle_sp
+
 
     @duty_cycle_sp.setter
     def duty_cycle_sp(self, value):
-        self._duty_cycle_sp = self.set_attr_int(self._duty_cycle_sp, 'duty_cycle_sp', value)
+        self._duty_cycle_sp = value
+        self.connector.set_duty_cycle(value)
+
 
     @property
     def full_travel_count(self):
@@ -531,8 +515,9 @@ class Motor(Device):
         combined with the ``count_per_m`` atribute, you can use this value to
         calculate the maximum travel distance of the motor. (linear motors only)
         """
-        (self._full_travel_count, value) = self.get_cached_attr_int(self._full_travel_count, 'full_travel_count')
-        return value
+
+        return self._full_travel_count
+
 
     @property
     def polarity(self):
@@ -542,12 +527,14 @@ class Motor(Device):
         a positive duty cycle will cause the motor to rotate counter-clockwise.
         Valid values are ``normal`` and ``inversed``.
         """
-        self._polarity, value = self.get_attr_string(self._polarity, 'polarity')
-        return value
+
+        return self._polarity
+
 
     @polarity.setter
     def polarity(self, value):
-        self._polarity = self.set_attr_string(self._polarity, 'polarity', value)
+        self._polarity = value
+
 
     @property
     def position(self):
@@ -557,48 +544,52 @@ class Motor(Device):
         Likewise, rotating counter-clockwise causes the position to decrease.
         Writing will set the position to that value.
         """
-        self._position, value = self.get_attr_int(self._position, 'position')
-        return value
+
+        return self._position
+
 
     @position.setter
     def position(self, value):
-        self._position = self.set_attr_int(self._position, 'position', value)
+        self._position = value
+
 
     @property
     def position_p(self):
         """
         The proportional constant for the position PID.
         """
-        self._position_p, value = self.get_attr_int(self._position_p, 'hold_pid/Kp')
-        return value
+
+        return self._position_p
+
 
     @position_p.setter
     def position_p(self, value):
-        self._position_p = self.set_attr_int(self._position_p, 'hold_pid/Kp', value)
+        self._position_p = value
 
     @property
     def position_i(self):
         """
         The integral constant for the position PID.
         """
-        self._position_i, value = self.get_attr_int(self._position_i, 'hold_pid/Ki')
-        return value
+
+        return self._position_i
+
 
     @position_i.setter
     def position_i(self, value):
-        self._position_i = self.set_attr_int(self._position_i, 'hold_pid/Ki', value)
+        self._position_i = value
+
 
     @property
     def position_d(self):
         """
         The derivative constant for the position PID.
         """
-        self._position_d, value = self.get_attr_int(self._position_d, 'hold_pid/Kd')
-        return value
+        return self._position_d
 
     @position_d.setter
     def position_d(self, value):
-        self._position_d = self.set_attr_int(self._position_d, 'hold_pid/Kd', value)
+        self._position_d = value
 
     @property
     def position_sp(self):
@@ -608,12 +599,13 @@ class Motor(Device):
         can use the value returned by ``count_per_rot`` to convert tacho counts to/from
         rotations or degrees.
         """
-        self._position_sp, value = self.get_attr_int(self._position_sp, 'position_sp')
-        return value
+
+        return self._position_sp
 
     @position_sp.setter
     def position_sp(self, value):
-        self._position_sp = self.set_attr_int(self._position_sp, 'position_sp', value)
+        self._position_sp = value
+        self.connector.set_distance(value)
 
     @property
     def max_speed(self):
@@ -622,8 +614,8 @@ class Motor(Device):
         may be slightly different than the maximum speed that a particular motor can
         reach - it's the maximum theoretical speed.
         """
-        (self._max_speed, value) = self.get_cached_attr_int(self._max_speed, 'max_speed')
-        return value
+
+        return self._max_speed
 
     @property
     def speed(self):
@@ -632,8 +624,8 @@ class Motor(Device):
         not necessarily degrees (although it is for LEGO motors). Use the ``count_per_rot``
         attribute to convert this value to RPM or deg/sec.
         """
-        self._speed, value = self.get_attr_int(self._speed, 'speed')
-        return value
+
+        return self._speed
 
     @property
     def speed_sp(self):
@@ -645,12 +637,13 @@ class Motor(Device):
         RPM or deg/sec to tacho counts per second. Use the ``count_per_m`` attribute to
         convert m/s to tacho counts per second.
         """
-        self._speed_sp, value = self.get_attr_int(self._speed_sp, 'speed_sp')
-        return value
+
+        return self._speed_sp
 
     @speed_sp.setter
     def speed_sp(self, value):
-        self._speed_sp = self.set_attr_int(self._speed_sp, 'speed_sp', value)
+        self._speed_sp = value
+        self.connector.set_speed(value)
 
     @property
     def ramp_up_sp(self):
@@ -661,12 +654,12 @@ class Motor(Device):
         setpoint. The actual ramp time is the ratio of the difference between the
         ``speed_sp`` and the current ``speed`` and max_speed multiplied by ``ramp_up_sp``.
         """
-        self._ramp_up_sp, value = self.get_attr_int(self._ramp_up_sp, 'ramp_up_sp')
-        return value
+
+        return self._ramp_up_sp
 
     @ramp_up_sp.setter
     def ramp_up_sp(self, value):
-        self._ramp_up_sp = self.set_attr_int(self._ramp_up_sp, 'ramp_up_sp', value)
+        self._ramp_up_sp = value
 
     @property
     def ramp_down_sp(self):
@@ -677,48 +670,48 @@ class Motor(Device):
         setpoint. The actual ramp time is the ratio of the difference between the
         ``speed_sp`` and the current ``speed`` and max_speed multiplied by ``ramp_down_sp``.
         """
-        self._ramp_down_sp, value = self.get_attr_int(self._ramp_down_sp, 'ramp_down_sp')
-        return value
+
+        return self._ramp_down_sp
 
     @ramp_down_sp.setter
     def ramp_down_sp(self, value):
-        self._ramp_down_sp = self.set_attr_int(self._ramp_down_sp, 'ramp_down_sp', value)
+        self._ramp_down_sp = value
 
     @property
     def speed_p(self):
         """
         The proportional constant for the speed regulation PID.
         """
-        self._speed_p, value = self.get_attr_int(self._speed_p, 'speed_pid/Kp')
-        return value
+
+        return self._speed_p
 
     @speed_p.setter
     def speed_p(self, value):
-        self._speed_p = self.set_attr_int(self._speed_p, 'speed_pid/Kp', value)
+        self._speed_p = value
 
     @property
     def speed_i(self):
         """
         The integral constant for the speed regulation PID.
         """
-        self._speed_i, value = self.get_attr_int(self._speed_i, 'speed_pid/Ki')
-        return value
+
+        return self._speed_i
 
     @speed_i.setter
     def speed_i(self, value):
-        self._speed_i = self.set_attr_int(self._speed_i, 'speed_pid/Ki', value)
+        self._speed_i = value
 
     @property
     def speed_d(self):
         """
         The derivative constant for the speed regulation PID.
         """
-        self._speed_d, value = self.get_attr_int(self._speed_d, 'speed_pid/Kd')
-        return value
+
+        return self._speed_d
 
     @speed_d.setter
     def speed_d(self, value):
-        self._speed_d = self.set_attr_int(self._speed_d, 'speed_pid/Kd', value)
+        self._speed_d = value
 
     @property
     def state(self):
@@ -726,8 +719,11 @@ class Motor(Device):
         Reading returns a list of state flags. Possible flags are
         ``running``, ``ramping``, ``holding``, ``overloaded`` and ``stalled``.
         """
-        self._state, value = self.get_attr_set(self._state, 'state')
-        return value
+
+        if time.time() < self.running_until:
+            return Motor.STATE_RUNNING
+        else:
+            return Motor.STATE_HOLDING
 
     @property
     def stop_action(self):
@@ -737,12 +733,13 @@ class Motor(Device):
         Also, it determines the motors behavior when a run command completes. See
         ``stop_actions`` for a list of possible values.
         """
-        self._stop_action, value = self.get_attr_string(self._stop_action, 'stop_action')
-        return value
+
+        return self._stop_action
 
     @stop_action.setter
     def stop_action(self, value):
-        self._stop_action = self.set_attr_string(self._stop_action, 'stop_action', value)
+        self._stop_action = value
+        self.connector.set_stop_action(value)
 
     @property
     def stop_actions(self):
@@ -758,8 +755,8 @@ class Motor(Device):
         position. If an external force tries to turn the motor, the motor will 'push
         back' to maintain its position.
         """
-        (self._stop_actions, value) = self.get_cached_attr_set(self._stop_actions, 'stop_actions')
-        return value
+
+        return self._stop_actions
 
     @property
     def time_sp(self):
@@ -768,112 +765,142 @@ class Motor(Device):
         ``run-timed`` command. Reading returns the current value. Units are in
         milliseconds.
         """
-        self._time_sp, value = self.get_attr_int(self._time_sp, 'time_sp')
-        return value
+
+        return self._time_sp
 
     @time_sp.setter
     def time_sp(self, value):
-        self._time_sp = self.set_attr_int(self._time_sp, 'time_sp', value)
+        self._time_sp = value
+        self.connector.set_time(value)
 
-    def run_forever(self, **kwargs):
+
+    def run_forever(self):
         """
         Run the motor until another command is sent.
         """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
+
         self.command = self.COMMAND_RUN_FOREVER
 
-    def run_to_abs_pos(self, **kwargs):
+        run_time = self.connector.run_forever()
+        self.running_until = time.time() + run_time
+
+
+    def run_to_abs_pos(self):
         """
         Run to an absolute position specified by ``position_sp`` and then
         stop using the action specified in ``stop_action``.
         """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
-        self.command = self.COMMAND_RUN_TO_ABS_POS
 
-    def run_to_rel_pos(self, **kwargs):
+        self._command = self.COMMAND_RUN_TO_ABS_POS
+
+        run_time = self.connector.run_to_rel_pos()
+        self.running_until = time.time() + run_time
+
+
+    def run_to_rel_pos(self):
         """
         Run to a position relative to the current ``position`` value.
         The new position will be current ``position`` + ``position_sp``.
         When the new position is reached, the motor will stop using
         the action specified by ``stop_action``.
         """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
+
         self.command = self.COMMAND_RUN_TO_REL_POS
 
-    def run_timed(self, **kwargs):
+        run_time = self.connector.run_to_rel_pos()
+        self.running_until = time.time() + run_time
+
+
+    def run_timed(self):
         """
         Run the motor for the amount of time specified in ``time_sp``
         and then stop the motor using the action specified by ``stop_action``.
         """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
+
         self.command = self.COMMAND_RUN_TIMED
 
-    def run_direct(self, **kwargs):
+        run_time = self.connector.run_timed()
+        self.running_until = time.time() + run_time
+
+
+    def run_direct(self):
         """
         Run the motor at the duty cycle specified by ``duty_cycle_sp``.
         Unlike other run commands, changing ``duty_cycle_sp`` while running *will*
         take effect immediately.
         """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
+
         self.command = self.COMMAND_RUN_DIRECT
 
-    def stop(self, **kwargs):
+        run_time = self.connector.run_direct()
+        self.running_until = time.time() + run_time
+
+
+    def stop(self):
         """
         Stop any of the run commands before they are complete using the
         action specified by ``stop_action``.
         """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
+
         self.command = self.COMMAND_STOP
 
-    def reset(self, **kwargs):
+        run_time = self.connector.stop()
+        self.running_until = time.time() + run_time
+
+
+    def reset(self):
         """
         Reset all of the motor parameter attributes to their default value.
         This will also have the effect of stopping the motor.
         """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
+
         self.command = self.COMMAND_RESET
+
+        run_time = self.connector.stop()
+        self.running_until = time.time() + run_time
+
 
     @property
     def is_running(self):
         """
         Power is being sent to the motor.
         """
-        return self.STATE_RUNNING in self.state
+
+        return time.time() < self.running_until
+
 
     @property
     def is_ramping(self):
         """
         The motor is ramping up or down and has not yet reached a constant output level.
         """
-        return self.STATE_RAMPING in self.state
+        return False
+
 
     @property
     def is_holding(self):
         """
         The motor is not turning, but rather attempting to hold a fixed position.
         """
-        return self.STATE_HOLDING in self.state
+
+        return time.time() > self.running_until
+
 
     @property
     def is_overloaded(self):
         """
         The motor is turning, but cannot reach its ``speed_sp``.
         """
-        return self.STATE_OVERLOADED in self.state
+        return False
+
 
     @property
     def is_stalled(self):
         """
         The motor is not turning when it should be.
         """
-        return self.STATE_STALLED in self.state
+        return False
+
 
     def wait(self, cond, timeout=None):
         """
@@ -885,31 +912,25 @@ class Motor(Device):
         is reached.
         """
 
-        tic = time.time()
+        start = time.time()
 
-        if self._poll is None:
-            if self._state is None:
-                self._state = self._attribute_file_open('state')
-            self._poll = select.poll()
-            self._poll.register(self._state, select.POLLPRI)
-
-        # Set poll timeout to something small. For more details, see
-        # https://github.com/ev3dev/ev3dev-lang-python/issues/583
         if timeout:
-            poll_tm = min(timeout, 100)
+            sleep_time = min(timeout, 0.1)
         else:
-            poll_tm = 100
+            sleep_time = 0.1
 
         while True:
-            # This check is now done every poll_tm even if poll has nothing to report:
-            if cond(self.state):
+            now = time.time()
+
+            if cond(now):
                 return True
 
-            self._poll.poll(poll_tm)
+            time.sleep(sleep_time)
 
-            if timeout is not None and time.time() >= tic + timeout / 1000:
+            if timeout is not None and time.time() >= start + timeout / 1000:
                 # Final check when user timeout is reached
-                return cond(self.state)
+                return cond(now)
+
 
     def wait_until_not_moving(self, timeout=None):
         """
@@ -925,7 +946,10 @@ class Motor(Device):
 
             m.wait_until_not_moving()
         """
-        return self.wait(lambda state: self.STATE_RUNNING not in state or self.STATE_STALLED in state, timeout)
+
+        l = lambda now: True if self.running_until is None else self.running_until < now
+        return self.wait(l, timeout)
+
 
     def wait_until(self, s, timeout=None):
         """
@@ -940,7 +964,10 @@ class Motor(Device):
 
             m.wait_until('stalled')
         """
-        return self.wait(lambda state: s in state, timeout)
+
+        l = lambda now: False if self.running_until is None else now < self.running_until
+        return self.wait(l, timeout)
+
 
     def wait_while(self, s, timeout=None):
         """
@@ -955,7 +982,10 @@ class Motor(Device):
 
             m.wait_while('running')
         """
-        return self.wait(lambda state: s not in state, timeout)
+
+        l = lambda now: True if self.running_until is None else self.running_until < now
+        return self.wait(l, timeout)
+
 
     def _speed_native_units(self, speed, label=None):
         speed = speed_to_speedvalue(speed, label)
@@ -1093,9 +1123,10 @@ def list_motors(name_pattern=Motor.SYSTEM_DEVICE_NAME_CONVENTION, **kwargs):
             is a list, then a match against any entry of the list is
             enough.
     """
-    class_path = abspath(Device.DEVICE_ROOT_PATH + '/' + Motor.SYSTEM_CLASS_NAME)
 
-    return (Motor(name_pattern=name, name_exact=True) for name in list_device_names(class_path, name_pattern, **kwargs))
+
+    pass
+
 
 
 class LargeMotor(Motor):
@@ -1134,510 +1165,6 @@ class MediumMotor(Motor):
         super(MediumMotor, self).__init__(address, name_pattern, name_exact, driver_name=['lego-ev3-m-motor'], **kwargs)
 
 
-class ActuonixL1250Motor(Motor):
-    """
-    Actuonix L12 50 linear servo motor.
-
-    Same as :class:`Motor`, except it will only successfully initialize if it finds an
-    Actuonix L12 50 linear servo motor
-    """
-
-    SYSTEM_CLASS_NAME = Motor.SYSTEM_CLASS_NAME
-    SYSTEM_DEVICE_NAME_CONVENTION = 'linear*'
-    __slots__ = []
-
-    def __init__(self, address=None, name_pattern=SYSTEM_DEVICE_NAME_CONVENTION, name_exact=False, **kwargs):
-
-        super(ActuonixL1250Motor, self).__init__(address,
-                                                 name_pattern,
-                                                 name_exact,
-                                                 driver_name=['act-l12-ev3-50'],
-                                                 **kwargs)
-
-
-class ActuonixL12100Motor(Motor):
-    """
-    Actuonix L12 100 linear servo motor.
-
-    Same as :class:`Motor`, except it will only successfully initialize if it finds an
-    Actuonix L12 100linear servo motor
-    """
-
-    SYSTEM_CLASS_NAME = Motor.SYSTEM_CLASS_NAME
-    SYSTEM_DEVICE_NAME_CONVENTION = 'linear*'
-    __slots__ = []
-
-    def __init__(self, address=None, name_pattern=SYSTEM_DEVICE_NAME_CONVENTION, name_exact=False, **kwargs):
-
-        super(ActuonixL12100Motor, self).__init__(address,
-                                                  name_pattern,
-                                                  name_exact,
-                                                  driver_name=['act-l12-ev3-100'],
-                                                  **kwargs)
-
-
-class DcMotor(Device):
-    """
-    The DC motor class provides a uniform interface for using regular DC motors
-    with no fancy controls or feedback. This includes LEGO MINDSTORMS RCX motors
-    and LEGO Power Functions motors.
-    """
-
-    SYSTEM_CLASS_NAME = 'dc-motor'
-    SYSTEM_DEVICE_NAME_CONVENTION = 'motor*'
-    __slots__ = [
-        '_address',
-        '_command',
-        '_commands',
-        '_driver_name',
-        '_duty_cycle',
-        '_duty_cycle_sp',
-        '_polarity',
-        '_ramp_down_sp',
-        '_ramp_up_sp',
-        '_state',
-        '_stop_action',
-        '_stop_actions',
-        '_time_sp',
-    ]
-
-    def __init__(self, address=None, name_pattern=SYSTEM_DEVICE_NAME_CONVENTION, name_exact=False, **kwargs):
-
-        if address is not None:
-            kwargs['address'] = address
-        super(DcMotor, self).__init__(self.SYSTEM_CLASS_NAME, name_pattern, name_exact, **kwargs)
-
-        self._address = None
-        self._command = None
-        self._commands = None
-        self._driver_name = None
-        self._duty_cycle = None
-        self._duty_cycle_sp = None
-        self._polarity = None
-        self._ramp_down_sp = None
-        self._ramp_up_sp = None
-        self._state = None
-        self._stop_action = None
-        self._stop_actions = None
-        self._time_sp = None
-
-    @property
-    def address(self):
-        """
-        Returns the name of the port that this motor is connected to.
-        """
-        self._address, value = self.get_attr_string(self._address, 'address')
-        return value
-
-    @property
-    def command(self):
-        """
-        Sets the command for the motor. Possible values are ``run-forever``, ``run-timed`` and
-        ``stop``. Not all commands may be supported, so be sure to check the contents
-        of the ``commands`` attribute.
-        """
-        raise Exception("command is a write-only property!")
-
-    @command.setter
-    def command(self, value):
-        self._command = self.set_attr_string(self._command, 'command', value)
-
-    @property
-    def commands(self):
-        """
-        Returns a list of commands supported by the motor
-        controller.
-        """
-        self._commands, value = self.get_attr_set(self._commands, 'commands')
-        return value
-
-    @property
-    def driver_name(self):
-        """
-        Returns the name of the motor driver that loaded this device. See the list
-        of [supported devices] for a list of drivers.
-        """
-        self._driver_name, value = self.get_attr_string(self._driver_name, 'driver_name')
-        return value
-
-    @property
-    def duty_cycle(self):
-        """
-        Shows the current duty cycle of the PWM signal sent to the motor. Values
-        are -100 to 100 (-100% to 100%).
-        """
-        self._duty_cycle, value = self.get_attr_int(self._duty_cycle, 'duty_cycle')
-        return value
-
-    @property
-    def duty_cycle_sp(self):
-        """
-        Writing sets the duty cycle setpoint of the PWM signal sent to the motor.
-        Valid values are -100 to 100 (-100% to 100%). Reading returns the current
-        setpoint.
-        """
-        self._duty_cycle_sp, value = self.get_attr_int(self._duty_cycle_sp, 'duty_cycle_sp')
-        return value
-
-    @duty_cycle_sp.setter
-    def duty_cycle_sp(self, value):
-        self._duty_cycle_sp = self.set_attr_int(self._duty_cycle_sp, 'duty_cycle_sp', value)
-
-    @property
-    def polarity(self):
-        """
-        Sets the polarity of the motor. Valid values are ``normal`` and ``inversed``.
-        """
-        self._polarity, value = self.get_attr_string(self._polarity, 'polarity')
-        return value
-
-    @polarity.setter
-    def polarity(self, value):
-        self._polarity = self.set_attr_string(self._polarity, 'polarity', value)
-
-    @property
-    def ramp_down_sp(self):
-        """
-        Sets the time in milliseconds that it take the motor to ramp down from 100%
-        to 0%. Valid values are 0 to 10000 (10 seconds). Default is 0.
-        """
-        self._ramp_down_sp, value = self.get_attr_int(self._ramp_down_sp, 'ramp_down_sp')
-        return value
-
-    @ramp_down_sp.setter
-    def ramp_down_sp(self, value):
-        self._ramp_down_sp = self.set_attr_int(self._ramp_down_sp, 'ramp_down_sp', value)
-
-    @property
-    def ramp_up_sp(self):
-        """
-        Sets the time in milliseconds that it take the motor to up ramp from 0% to
-        100%. Valid values are 0 to 10000 (10 seconds). Default is 0.
-        """
-        self._ramp_up_sp, value = self.get_attr_int(self._ramp_up_sp, 'ramp_up_sp')
-        return value
-
-    @ramp_up_sp.setter
-    def ramp_up_sp(self, value):
-        self._ramp_up_sp = self.set_attr_int(self._ramp_up_sp, 'ramp_up_sp', value)
-
-    @property
-    def state(self):
-        """
-        Gets a list of flags indicating the motor status. Possible
-        flags are ``running`` and ``ramping``. ``running`` indicates that the motor is
-        powered. ``ramping`` indicates that the motor has not yet reached the
-        ``duty_cycle_sp``.
-        """
-        self._state, value = self.get_attr_set(self._state, 'state')
-        return value
-
-    @property
-    def stop_action(self):
-        """
-        Sets the stop action that will be used when the motor stops. Read
-        ``stop_actions`` to get the list of valid values.
-        """
-        raise Exception("stop_action is a write-only property!")
-
-    @stop_action.setter
-    def stop_action(self, value):
-        self._stop_action = self.set_attr_string(self._stop_action, 'stop_action', value)
-
-    @property
-    def stop_actions(self):
-        """
-        Gets a list of stop actions. Valid values are ``coast``
-        and ``brake``.
-        """
-        self._stop_actions, value = self.get_attr_set(self._stop_actions, 'stop_actions')
-        return value
-
-    @property
-    def time_sp(self):
-        """
-        Writing specifies the amount of time the motor will run when using the
-        ``run-timed`` command. Reading returns the current value. Units are in
-        milliseconds.
-        """
-        self._time_sp, value = self.get_attr_int(self._time_sp, 'time_sp')
-        return value
-
-    @time_sp.setter
-    def time_sp(self, value):
-        self._time_sp = self.set_attr_int(self._time_sp, 'time_sp', value)
-
-    #: Run the motor until another command is sent.
-    COMMAND_RUN_FOREVER = 'run-forever'
-
-    #: Run the motor for the amount of time specified in ``time_sp``
-    #: and then stop the motor using the action specified by ``stop_action``.
-    COMMAND_RUN_TIMED = 'run-timed'
-
-    #: Run the motor at the duty cycle specified by ``duty_cycle_sp``.
-    #: Unlike other run commands, changing ``duty_cycle_sp`` while running *will*
-    #: take effect immediately.
-    COMMAND_RUN_DIRECT = 'run-direct'
-
-    #: Stop any of the run commands before they are complete using the
-    #: action specified by ``stop_action``.
-    COMMAND_STOP = 'stop'
-
-    #: With ``normal`` polarity, a positive duty cycle will
-    #: cause the motor to rotate clockwise.
-    POLARITY_NORMAL = 'normal'
-
-    #: With ``inversed`` polarity, a positive duty cycle will
-    #: cause the motor to rotate counter-clockwise.
-    POLARITY_INVERSED = 'inversed'
-
-    #: Power will be removed from the motor and it will freely coast to a stop.
-    STOP_ACTION_COAST = 'coast'
-
-    #: Power will be removed from the motor and a passive electrical load will
-    #: be placed on the motor. This is usually done by shorting the motor terminals
-    #: together. This load will absorb the energy from the rotation of the motors and
-    #: cause the motor to stop more quickly than coasting.
-    STOP_ACTION_BRAKE = 'brake'
-
-    def run_forever(self, **kwargs):
-        """
-        Run the motor until another command is sent.
-        """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
-        self.command = self.COMMAND_RUN_FOREVER
-
-    def run_timed(self, **kwargs):
-        """
-        Run the motor for the amount of time specified in ``time_sp``
-        and then stop the motor using the action specified by ``stop_action``.
-        """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
-        self.command = self.COMMAND_RUN_TIMED
-
-    def run_direct(self, **kwargs):
-        """
-        Run the motor at the duty cycle specified by ``duty_cycle_sp``.
-        Unlike other run commands, changing ``duty_cycle_sp`` while running *will*
-        take effect immediately.
-        """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
-        self.command = self.COMMAND_RUN_DIRECT
-
-    def stop(self, **kwargs):
-        """
-        Stop any of the run commands before they are complete using the
-        action specified by ``stop_action``.
-        """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
-        self.command = self.COMMAND_STOP
-
-
-class ServoMotor(Device):
-    """
-    The servo motor class provides a uniform interface for using hobby type
-    servo motors.
-    """
-
-    SYSTEM_CLASS_NAME = 'servo-motor'
-    SYSTEM_DEVICE_NAME_CONVENTION = 'motor*'
-    __slots__ = [
-        '_address',
-        '_command',
-        '_driver_name',
-        '_max_pulse_sp',
-        '_mid_pulse_sp',
-        '_min_pulse_sp',
-        '_polarity',
-        '_position_sp',
-        '_rate_sp',
-        '_state',
-    ]
-
-    def __init__(self, address=None, name_pattern=SYSTEM_DEVICE_NAME_CONVENTION, name_exact=False, **kwargs):
-
-        if address is not None:
-            kwargs['address'] = address
-        super(ServoMotor, self).__init__(self.SYSTEM_CLASS_NAME, name_pattern, name_exact, **kwargs)
-
-        self._address = None
-        self._command = None
-        self._driver_name = None
-        self._max_pulse_sp = None
-        self._mid_pulse_sp = None
-        self._min_pulse_sp = None
-        self._polarity = None
-        self._position_sp = None
-        self._rate_sp = None
-        self._state = None
-
-    @property
-    def address(self):
-        """
-        Returns the name of the port that this motor is connected to.
-        """
-        self._address, value = self.get_attr_string(self._address, 'address')
-        return value
-
-    @property
-    def command(self):
-        """
-        Sets the command for the servo. Valid values are ``run`` and ``float``. Setting
-        to ``run`` will cause the servo to be driven to the position_sp set in the
-        ``position_sp`` attribute. Setting to ``float`` will remove power from the motor.
-        """
-        raise Exception("command is a write-only property!")
-
-    @command.setter
-    def command(self, value):
-        self._command = self.set_attr_string(self._command, 'command', value)
-
-    @property
-    def driver_name(self):
-        """
-        Returns the name of the motor driver that loaded this device. See the list
-        of [supported devices] for a list of drivers.
-        """
-        self._driver_name, value = self.get_attr_string(self._driver_name, 'driver_name')
-        return value
-
-    @property
-    def max_pulse_sp(self):
-        """
-        Used to set the pulse size in milliseconds for the signal that tells the
-        servo to drive to the maximum (clockwise) position_sp. Default value is 2400.
-        Valid values are 2300 to 2700. You must write to the position_sp attribute for
-        changes to this attribute to take effect.
-        """
-        self._max_pulse_sp, value = self.get_attr_int(self._max_pulse_sp, 'max_pulse_sp')
-        return value
-
-    @max_pulse_sp.setter
-    def max_pulse_sp(self, value):
-        self._max_pulse_sp = self.set_attr_int(self._max_pulse_sp, 'max_pulse_sp', value)
-
-    @property
-    def mid_pulse_sp(self):
-        """
-        Used to set the pulse size in milliseconds for the signal that tells the
-        servo to drive to the mid position_sp. Default value is 1500. Valid
-        values are 1300 to 1700. For example, on a 180 degree servo, this would be
-        90 degrees. On continuous rotation servo, this is the 'neutral' position_sp
-        where the motor does not turn. You must write to the position_sp attribute for
-        changes to this attribute to take effect.
-        """
-        self._mid_pulse_sp, value = self.get_attr_int(self._mid_pulse_sp, 'mid_pulse_sp')
-        return value
-
-    @mid_pulse_sp.setter
-    def mid_pulse_sp(self, value):
-        self._mid_pulse_sp = self.set_attr_int(self._mid_pulse_sp, 'mid_pulse_sp', value)
-
-    @property
-    def min_pulse_sp(self):
-        """
-        Used to set the pulse size in milliseconds for the signal that tells the
-        servo to drive to the miniumum (counter-clockwise) position_sp. Default value
-        is 600. Valid values are 300 to 700. You must write to the position_sp
-        attribute for changes to this attribute to take effect.
-        """
-        self._min_pulse_sp, value = self.get_attr_int(self._min_pulse_sp, 'min_pulse_sp')
-        return value
-
-    @min_pulse_sp.setter
-    def min_pulse_sp(self, value):
-        self._min_pulse_sp = self.set_attr_int(self._min_pulse_sp, 'min_pulse_sp', value)
-
-    @property
-    def polarity(self):
-        """
-        Sets the polarity of the servo. Valid values are ``normal`` and ``inversed``.
-        Setting the value to ``inversed`` will cause the position_sp value to be
-        inversed. i.e ``-100`` will correspond to ``max_pulse_sp``, and ``100`` will
-        correspond to ``min_pulse_sp``.
-        """
-        self._polarity, value = self.get_attr_string(self._polarity, 'polarity')
-        return value
-
-    @polarity.setter
-    def polarity(self, value):
-        self._polarity = self.set_attr_string(self._polarity, 'polarity', value)
-
-    @property
-    def position_sp(self):
-        """
-        Reading returns the current position_sp of the servo. Writing instructs the
-        servo to move to the specified position_sp. Units are percent. Valid values
-        are -100 to 100 (-100% to 100%) where ``-100`` corresponds to ``min_pulse_sp``,
-        ``0`` corresponds to ``mid_pulse_sp`` and ``100`` corresponds to ``max_pulse_sp``.
-        """
-        self._position_sp, value = self.get_attr_int(self._position_sp, 'position_sp')
-        return value
-
-    @position_sp.setter
-    def position_sp(self, value):
-        self._position_sp = self.set_attr_int(self._position_sp, 'position_sp', value)
-
-    @property
-    def rate_sp(self):
-        """
-        Sets the rate_sp at which the servo travels from 0 to 100.0% (half of the full
-        range of the servo). Units are in milliseconds. Example: Setting the rate_sp
-        to 1000 means that it will take a 180 degree servo 2 second to move from 0
-        to 180 degrees. Note: Some servo controllers may not support this in which
-        case reading and writing will fail with ``-EOPNOTSUPP``. In continuous rotation
-        servos, this value will affect the rate_sp at which the speed ramps up or down.
-        """
-        self._rate_sp, value = self.get_attr_int(self._rate_sp, 'rate_sp')
-        return value
-
-    @rate_sp.setter
-    def rate_sp(self, value):
-        self._rate_sp = self.set_attr_int(self._rate_sp, 'rate_sp', value)
-
-    @property
-    def state(self):
-        """
-        Returns a list of flags indicating the state of the servo.
-        Possible values are:
-        * ``running``: Indicates that the motor is powered.
-        """
-        self._state, value = self.get_attr_set(self._state, 'state')
-        return value
-
-    #: Drive servo to the position set in the ``position_sp`` attribute.
-    COMMAND_RUN = 'run'
-
-    #: Remove power from the motor.
-    COMMAND_FLOAT = 'float'
-
-    #: With ``normal`` polarity, a positive duty cycle will
-    #: cause the motor to rotate clockwise.
-    POLARITY_NORMAL = 'normal'
-
-    #: With ``inversed`` polarity, a positive duty cycle will
-    #: cause the motor to rotate counter-clockwise.
-    POLARITY_INVERSED = 'inversed'
-
-    def run(self, **kwargs):
-        """
-        Drive servo to the position set in the ``position_sp`` attribute.
-        """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
-        self.command = self.COMMAND_RUN
-
-    def float(self, **kwargs):
-        """
-        Remove power from the motor.
-        """
-        for key in kwargs:
-            setattr(self, key, kwargs[key])
-        self.command = self.COMMAND_FLOAT
 
 
 class MotorSet(object):
@@ -1841,15 +1368,8 @@ def follow_for_ms(tank, ms):
     ``tank``: the MoveTank object that is following a line
     ``ms`` : the number of milliseconds to follow the line
     """
-    if not hasattr(tank, 'stopwatch') or tank.stopwatch is None:
-        tank.stopwatch = StopWatch()
-        tank.stopwatch.start()
 
-    if tank.stopwatch.value_ms >= ms:
-        tank.stopwatch = None
-        return False
-    else:
-        return True
+    pass
 
 
 class MoveTank(MotorSet):
@@ -2068,55 +1588,9 @@ class MoveTank(MotorSet):
                 tank.stop()
                 raise
         """
-        if not self._cs:
-            raise DeviceNotDefined(
-                "The 'cs' variable must be defined with a ColorSensor. Example: tank.cs = ColorSensor()")
 
-        if target_light_intensity is None:
-            target_light_intensity = self._cs.reflected_light_intensity
 
-        integral = 0.0
-        last_error = 0.0
-        derivative = 0.0
-        off_line_count = 0
-        speed = speed_to_speedvalue(speed)
-        speed_native_units = speed.to_native_units(self.left_motor)
-
-        while follow_for(self, **kwargs):
-            reflected_light_intensity = self._cs.reflected_light_intensity
-            error = target_light_intensity - reflected_light_intensity
-            integral = integral + error
-            derivative = error - last_error
-            last_error = error
-            turn_native_units = (kp * error) + (ki * integral) + (kd * derivative)
-
-            if not follow_left_edge:
-                turn_native_units *= -1
-
-            left_speed = SpeedNativeUnits(speed_native_units - turn_native_units)
-            right_speed = SpeedNativeUnits(speed_native_units + turn_native_units)
-
-            # Have we lost the line?
-            if reflected_light_intensity >= white:
-                off_line_count += 1
-
-                if off_line_count >= off_line_count_max:
-                    self.stop()
-                    raise LineFollowErrorLostLine("we lost the line")
-            else:
-                off_line_count = 0
-
-            if sleep_time:
-                time.sleep(sleep_time)
-
-            try:
-                self.on(left_speed, right_speed)
-            except SpeedInvalid as e:
-                log.exception(e)
-                self.stop()
-                raise LineFollowErrorTooFast("The robot is moving too fast to follow the line")
-
-        self.stop()
+        pass
 
     def follow_gyro_angle(self,
                           kp,

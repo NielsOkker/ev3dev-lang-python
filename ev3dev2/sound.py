@@ -29,6 +29,8 @@ import re
 from time import sleep
 from ev3dev2 import is_micropython
 
+from ev3dev2simulator.connector.SoundConnector import SoundConnector
+
 if sys.version_info < (3, 4):
     raise SystemError('Must be using Python 3.4 or higher')
 
@@ -53,21 +55,7 @@ def get_command_processes(command):
     :return: a list of Popen objects
     """
 
-    # We must split command into sub-commands to support pipes
-    if "|" in command:
-        command_parts = command.split("|")
-    else:
-        command_parts = [command]
-
-    processes = []
-
-    for command_part in command_parts:
-        if processes:
-            processes.append(Popen(shlex.split(command_part), stdin=processes[-1].stdout, stdout=PIPE, stderr=PIPE))
-        else:
-            processes.append(Popen(shlex.split(command_part), stdin=None, stdout=PIPE, stderr=PIPE))
-
-    return processes
+    pass  # CHANGE: removed entire function
 
 
 class Sound(object):
@@ -108,6 +96,9 @@ class Sound(object):
     PLAY_LOOP = 2  #: Never return; start the sound immediately after it completes, until the program is killed
 
     PLAY_TYPES = (PLAY_WAIT_FOR_COMPLETE, PLAY_NO_WAIT_FOR_COMPLETE, PLAY_LOOP)
+
+    def __init__(self):  # CHANGE: added setup of connector
+        self.connector = SoundConnector()
 
     def _validate_play_type(self, play_type):
         assert play_type in self.PLAY_TYPES, \
@@ -153,7 +144,7 @@ class Sound(object):
                 else:
                     raise Exception("invalid play_type " % play_type)
 
-    def beep(self, args='', play_type=PLAY_WAIT_FOR_COMPLETE):
+    def beep(self, args=[{}], play_type=PLAY_WAIT_FOR_COMPLETE):
         """
         Call beep command with the provided arguments (if any).
         See `beep man page`_ and google `linux beep music`_ for inspiration.
@@ -169,7 +160,8 @@ class Sound(object):
         .. _`beep man page`: https://linux.die.net/man/1/beep
         .. _`linux beep music`: https://www.google.com/search?q=linux+beep+music
         """
-        return self._audio_command("/usr/bin/beep %s" % args, play_type)
+
+        self.connector.beep(args, play_type=play_type)  # CHANGE: removed and functionality moved to connector
 
     def tone(self, *args, play_type=PLAY_WAIT_FOR_COMPLETE):
         """
@@ -227,19 +219,20 @@ class Sound(object):
         :return: When python3 is used and ``Sound.PLAY_NO_WAIT_FOR_COMPLETE`` is specified, returns the
             spawn subprocess from ``subprocess.Popen``; ``None`` otherwise
         """
-        def play_tone_sequence(tone_sequence):
+
+        def play_tone_sequence(tone_sequence):  # CHANGE: returns object list instead of string
             def beep_args(frequency=None, duration=None, delay=None):
-                args = ''
+                args = {}
                 if frequency is not None:
-                    args += '-f %s ' % frequency
+                    args['frequency'] = frequency
                 if duration is not None:
-                    args += '-l %s ' % duration
+                    args['duration'] = duration
                 if delay is not None:
-                    args += '-D %s ' % delay
+                    args['delay'] = delay
 
                 return args
 
-            return self.beep(' -n '.join([beep_args(*t) for t in tone_sequence]), play_type=play_type)
+            return self.beep(([beep_args(*t) for t in tone_sequence]), play_type=play_type)
 
         if len(args) == 1:
             return play_tone_sequence(args[0])
@@ -331,7 +324,7 @@ class Sound(object):
 
         self._validate_play_type(play_type)
         self.set_volume(volume)
-        return self._audio_command('/usr/bin/aplay -q "%s"' % wav_file, play_type)
+        self.connector.play_file(wav_file, volume, play_type)  # CHANGE: replaced direct call to /bin/aplay
 
     def speak(self, text, espeak_opts='-a 200 -s 130', volume=100, play_type=PLAY_WAIT_FOR_COMPLETE):
         """ Speak the given text aloud.
@@ -348,10 +341,9 @@ class Sound(object):
         :return: When python3 is used and ``Sound.PLAY_NO_WAIT_FOR_COMPLETE`` is specified, returns the
             spawn subprocess from ``subprocess.Popen``; ``None`` otherwise
         """
-        self._validate_play_type(play_type)
-        self.set_volume(volume)
-        cmd = "/usr/bin/espeak --stdout %s '%s' | /usr/bin/aplay -q" % (espeak_opts, text)
-        return self._audio_command(cmd, play_type)
+
+        self.connector.speak(text, espeak_opts, volume, play_type)
+        return
 
     def _get_channel(self):
         """
@@ -383,10 +375,7 @@ class Sound(object):
         ``Playback`` channel, as that is the only channel on the EV3.
         """
 
-        if channel is None:
-            channel = self._get_channel()
-
-        os.system('/usr/bin/amixer -q set {0} {1:d}%'.format(channel, pct))
+        pass  # CHANGE: Not yet supported
 
     def get_volume(self, channel=None):
         """
@@ -397,15 +386,8 @@ class Sound(object):
         ``Playback`` channel, as that is the only channel on the EV3.
         """
 
-        if channel is None:
-            channel = self._get_channel()
+        pass  # CHANGE: Not yet supported
 
-        out = os.popen(['/usr/bin/amixer', 'get', channel]).read()
-        m = re.search(r'\[(\d+)%\]', out)
-        if m:
-            return int(m.group(1))
-        else:
-            raise Exception('Failed to parse output of ``amixer get {}``'.format(channel))
 
     def play_song(self, song, tempo=120, delay=0.05):
         """ Plays a song provided as a list of tuples containing the note name and its
@@ -513,7 +495,7 @@ class Sound(object):
                 sleep(duration_ms / 1000 + delay)
             else:
                 freq = self._NOTE_FREQUENCIES[note.upper()]
-                self.beep('-f %d -l %d -D %d' % (freq, duration_ms, delay_ms))
+                self.tone([(freq, duration_ms, delay_ms)], play_type=Sound.PLAY_WAIT_FOR_COMPLETE)
 
     #: Note frequencies.
     #:

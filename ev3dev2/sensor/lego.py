@@ -23,11 +23,15 @@
 # THE SOFTWARE.
 # -----------------------------------------------------------------------------
 
+
 import sys
 import logging
+
 import time
 from ev3dev2.button import ButtonBase
 from ev3dev2.sensor import Sensor
+from ev3dev2simulator.connector.SensorConnector import SensorConnector
+from ev3dev2simulator.util.Util import get_cm_multiplier, get_inch_multiplier
 
 if sys.version_info < (3, 4):
     raise SystemError('Must be using Python 3.4 or higher')
@@ -54,6 +58,7 @@ class TouchSensor(Sensor):
                                           driver_name=['lego-ev3-touch', 'lego-nxt-touch'],
                                           **kwargs)
 
+        self.connector = SensorConnector(self.address)
     @property
     def is_pressed(self):
         """
@@ -61,7 +66,7 @@ class TouchSensor(Sensor):
         pressed.
         """
         self._ensure_mode(self.MODE_TOUCH)
-        return self.value(0)
+        return self.connector.get_value()
 
     @property
     def is_released(self):
@@ -113,12 +118,23 @@ class TouchSensor(Sensor):
         return False
 
 
+    def value(self, n=0):
+        """
+        Returns the value or values measured by the sensor. Check num_values to
+        see how many values there are. Values with N >= num_values will return
+        an error. The values are fixed point numbers, so check decimals to see
+        if you need to divide to get the actual value.
+        """
+
+        return self.is_pressed()
+
+
 class ColorSensor(Sensor):
     """
     LEGO EV3 color sensor.
     """
 
-    __slots__ = ['red_max', 'green_max', 'blue_max']
+    __slots__ = ['red_max', 'green_max', 'blue_max', 'connector']
 
     SYSTEM_CLASS_NAME = Sensor.SYSTEM_CLASS_NAME
     SYSTEM_DEVICE_NAME_CONVENTION = Sensor.SYSTEM_DEVICE_NAME_CONVENTION
@@ -183,21 +199,26 @@ class ColorSensor(Sensor):
         self.green_max = 300
         self.blue_max = 300
 
+        self.connector = SensorConnector(self.address)
+
+
     @property
     def reflected_light_intensity(self):
         """
         Reflected light intensity as a percentage (0 to 100). Light on sensor is red.
         """
-        self._ensure_mode(self.MODE_COL_REFLECT)
-        return self.value(0)
+
+        pass
+
 
     @property
     def ambient_light_intensity(self):
         """
         Ambient light intensity, as a percentage (0 to 100). Light on sensor is dimly lit blue.
         """
-        self._ensure_mode(self.MODE_COL_AMBIENT)
-        return self.value(0)
+
+        pass
+
 
     @property
     def color(self):
@@ -213,14 +234,16 @@ class ColorSensor(Sensor):
           - 7: Brown
         """
         self._ensure_mode(self.MODE_COL_COLOR)
-        return self.value(0)
+        return self.connector.get_value()
+
 
     @property
     def color_name(self):
         """
         Returns NoColor, Black, Blue, etc
         """
-        return self.COLORS[self.color]
+
+        return self.COLORS[self.connector.get_value()]
 
     @property
     def raw(self):
@@ -231,11 +254,9 @@ class ColorSensor(Sensor):
         that high. We do not yet know why the values returned are low, but
         pointing the color sensor at a well lit sheet of white paper will return
         values in the 250-400 range.
-
-        If this is an issue, check out the rgb() and calibrate_white() methods.
         """
-        self._ensure_mode(self.MODE_RGB_RAW)
-        return self.value(0), self.value(1), self.value(2)
+        pass
+
 
     def calibrate_white(self):
         """
@@ -256,64 +277,27 @@ class ColorSensor(Sensor):
         - the amount of light in the room
         - shadows that the robot casts on the sensor
         """
-        (self.red_max, self.green_max, self.blue_max) = self.raw
+
+        pass
+
 
     @property
     def rgb(self):
         """
         Same as raw() but RGB values are scaled to 0-255
         """
-        (red, green, blue) = self.raw
 
-        return (min(int((red * 255) / self.red_max), 255), min(int((green * 255) / self.green_max),
-                                                               255), min(int((blue * 255) / self.blue_max), 255))
+        pass
+
 
     @property
     def lab(self):
         """
         Return colors in Lab color space
         """
-        RGB = [0, 0, 0]
-        XYZ = [0, 0, 0]
 
-        for (num, value) in enumerate(self.rgb):
-            if value > 0.04045:
-                value = pow(((value + 0.055) / 1.055), 2.4)
-            else:
-                value = value / 12.92
+        pass
 
-            RGB[num] = value * 100.0
-
-        # http://www.brucelindbloom.com/index.html?Eqn_RGB_XYZ_Matrix.html
-        # sRGB
-        # 0.4124564  0.3575761  0.1804375
-        # 0.2126729  0.7151522  0.0721750
-        # 0.0193339  0.1191920  0.9503041
-        X = (RGB[0] * 0.4124564) + (RGB[1] * 0.3575761) + (RGB[2] * 0.1804375)
-        Y = (RGB[0] * 0.2126729) + (RGB[1] * 0.7151522) + (RGB[2] * 0.0721750)
-        Z = (RGB[0] * 0.0193339) + (RGB[1] * 0.1191920) + (RGB[2] * 0.9503041)
-
-        XYZ[0] = X / 95.047  # ref_X =  95.047
-        XYZ[1] = Y / 100.0  # ref_Y = 100.000
-        XYZ[2] = Z / 108.883  # ref_Z = 108.883
-
-        for (num, value) in enumerate(XYZ):
-            if value > 0.008856:
-                value = pow(value, (1.0 / 3.0))
-            else:
-                value = (7.787 * value) + (16 / 116.0)
-
-            XYZ[num] = value
-
-        L = (116.0 * XYZ[1]) - 16
-        a = 500.0 * (XYZ[0] - XYZ[1])
-        b = 200.0 * (XYZ[1] - XYZ[2])
-
-        L = round(L, 4)
-        a = round(a, 4)
-        b = round(b, 4)
-
-        return (L, a, b)
 
     @property
     def hsv(self):
@@ -323,29 +307,9 @@ class ColorSensor(Sensor):
         S: color saturation ("purity")
         V: color brightness
         """
-        (r, g, b) = self.rgb
-        maxc = max(r, g, b)
-        minc = min(r, g, b)
-        v = maxc
 
-        if minc == maxc:
-            return 0.0, 0.0, v
+        pass
 
-        s = (maxc - minc) / maxc
-        rc = (maxc - r) / (maxc - minc)
-        gc = (maxc - g) / (maxc - minc)
-        bc = (maxc - b) / (maxc - minc)
-
-        if r == maxc:
-            h = bc - gc
-        elif g == maxc:
-            h = 2.0 + rc - bc
-        else:
-            h = 4.0 + gc - rc
-
-        h = (h / 6.0) % 1.0
-
-        return (h, s, v)
 
     @property
     def hls(self):
@@ -355,60 +319,46 @@ class ColorSensor(Sensor):
         L: color lightness
         S: color saturation
         """
-        (red, green, blue) = self.rgb
-        maxc = max(red, green, blue)
-        minc = min(red, green, blue)
-        luminance = (minc + maxc) / 2.0
 
-        if minc == maxc:
-            return 0.0, luminance, 0.0
+        pass
 
-        if luminance <= 0.5:
-            saturation = (maxc - minc) / (maxc + minc)
-        else:
-            if 2.0 - maxc - minc == 0:
-                saturation = 0
-            else:
-                saturation = (maxc - minc) / (2.0 - maxc - minc)
-
-        rc = (maxc - red) / (maxc - minc)
-        gc = (maxc - green) / (maxc - minc)
-        bc = (maxc - blue) / (maxc - minc)
-
-        if red == maxc:
-            hue = bc - gc
-        elif green == maxc:
-            hue = 2.0 + rc - bc
-        else:
-            hue = 4.0 + gc - rc
-
-        hue = (hue / 6.0) % 1.0
-
-        return (hue, luminance, saturation)
 
     @property
     def red(self):
         """
         Red component of the detected color, in the range 0-1020.
         """
-        self._ensure_mode(self.MODE_RGB_RAW)
-        return self.value(0)
+
+        pass
+
 
     @property
     def green(self):
         """
         Green component of the detected color, in the range 0-1020.
         """
-        self._ensure_mode(self.MODE_RGB_RAW)
-        return self.value(1)
+
+        pass
+
 
     @property
     def blue(self):
         """
         Blue component of the detected color, in the range 0-1020.
         """
-        self._ensure_mode(self.MODE_RGB_RAW)
-        return self.value(2)
+
+        pass
+
+
+    def value(self, n=0):
+        """
+        Returns the value or values measured by the sensor. Check num_values to
+        see how many values there are. Values with N >= num_values will return
+        an error. The values are fixed point numbers, so check decimals to see
+        if you need to divide to get the actual value.
+        """
+
+        return self.color
 
 
 class UltrasonicSensor(Sensor):
@@ -449,6 +399,10 @@ class UltrasonicSensor(Sensor):
                                                driver_name=['lego-ev3-us', 'lego-nxt-us'],
                                                **kwargs)
 
+        self.connector = SensorConnector(self.address)
+        self.mode = self.MODE_US_DIST_CM
+
+
     @property
     def distance_centimeters_continuous(self):
         """
@@ -461,7 +415,10 @@ class UltrasonicSensor(Sensor):
         Prefer using the equivalent :meth:`UltrasonicSensor.distance_centimeters` property.
         """
         self._ensure_mode(self.MODE_US_DIST_CM)
-        return self.value(0) * self._scale('US_DIST_CM')
+
+        value = self.connector.get_value()
+        return value if value == -1 else value * get_cm_multiplier()
+
 
     @property
     def distance_centimeters_ping(self):
@@ -478,10 +435,15 @@ class UltrasonicSensor(Sensor):
         250msec between each usage seems sufficient to keep the
         sensor from locking up.
         """
+
         # This mode is special; setting the mode causes the sensor to send out
         # a "ping", but the mode isn't actually changed.
+
         self.mode = self.MODE_US_SI_CM
-        return self.value(0) * self._scale('US_DIST_CM')
+
+        value = self.connector.get_value()
+        return value if value == -1 else value * get_cm_multiplier()
+
 
     @property
     def distance_centimeters(self):
@@ -505,7 +467,10 @@ class UltrasonicSensor(Sensor):
         Prefer using the equivalent :meth:`UltrasonicSensor.distance_inches` property.
         """
         self._ensure_mode(self.MODE_US_DIST_IN)
-        return self.value(0) * self._scale('US_DIST_IN')
+
+        value = self.connector.get_value()
+        return value if value == -1 else value * get_inch_multiplier()
+
 
     @property
     def distance_inches_ping(self):
@@ -525,7 +490,10 @@ class UltrasonicSensor(Sensor):
         # This mode is special; setting the mode causes the sensor to send out
         # a "ping", but the mode isn't actually changed.
         self.mode = self.MODE_US_SI_IN
-        return self.value(0) * self._scale('US_DIST_IN')
+
+        value = self.connector.get_value()
+        return value if value == -1 else value * get_inch_multiplier()
+
 
     @property
     def distance_inches(self):
@@ -543,8 +511,25 @@ class UltrasonicSensor(Sensor):
         Boolean indicating whether another ultrasonic sensor could
         be heard nearby.
         """
-        self._ensure_mode(self.MODE_US_LISTEN)
-        return bool(self.value(0))
+
+        pass
+
+
+    def value(self, n=0):
+        """
+        Returns the value or values measured by the sensor. Check num_values to
+        see how many values there are. Values with N >= num_values will return
+        an error. The values are fixed point numbers, so check decimals to see
+        if you need to divide to get the actual value.
+        """
+
+        if self.mode == self.MODE_US_DIST_CM \
+                or self.mode == self.MODE_US_SI_IN:
+            return self.distance_centimeters_continuous * 10
+
+        elif self.mode == self.MODE_US_DIST_IN \
+                or self.mode == self.MODE_US_SI_IN:
+            return self.distance_inches_continuous * 10
 
 
 class GyroSensor(Sensor):
@@ -588,8 +573,9 @@ class GyroSensor(Sensor):
 
     def __init__(self, address=None, name_pattern=SYSTEM_DEVICE_NAME_CONVENTION, name_exact=False, **kwargs):
         super(GyroSensor, self).__init__(address, name_pattern, name_exact, driver_name='lego-ev3-gyro', **kwargs)
-        self._direct = None
-        self._init_angle = self.angle
+
+        pass
+
 
     @property
     def angle(self):
@@ -597,34 +583,37 @@ class GyroSensor(Sensor):
         The number of degrees that the sensor has been rotated
         since it was put into this mode.
         """
-        self._ensure_mode(self.MODE_GYRO_ANG)
-        return self.value(0)
+
+        pass
+
 
     @property
     def rate(self):
         """
         The rate at which the sensor is rotating, in degrees/second.
         """
-        self._ensure_mode(self.MODE_GYRO_RATE)
-        return self.value(0)
+
+        pass
+
 
     @property
     def angle_and_rate(self):
         """
         Angle (degrees) and Rotational Speed (degrees/second).
         """
-        self._ensure_mode(self.MODE_GYRO_G_A)
-        return self.value(0), self.value(1)
+
+        pass
+
 
     @property
     def tilt_angle(self):
-        self._ensure_mode(self.MODE_TILT_ANG)
-        return self.value(0)
+        pass
+
 
     @property
     def tilt_rate(self):
-        self._ensure_mode(self.MODE_TILT_RATE)
-        return self.value(0)
+        pass
+
 
     def calibrate(self):
         """
@@ -643,9 +632,10 @@ class GyroSensor(Sensor):
             - This function only works on EV3, it does not work on BrickPi,
               PiStorms, or with any sensor multiplexors.
         """
-        # 17 comes from inspecting the .vix file of the Gyro sensor block in EV3-G
-        self._direct = self.set_attr_raw(self._direct, 'direct', b'\x11')
-        self._init_angle = self.angle
+
+
+        pass
+
 
     def wait_until_angle_changed_by(self, delta, direction_sensitive=False):
         """
@@ -657,22 +647,8 @@ class GyroSensor(Sensor):
         If ``direction_sensitive`` is False (default) we will wait until angle has changed
         by ``delta`` in either direction.
         """
-        assert self.mode in (self.MODE_GYRO_G_A, self.MODE_GYRO_ANG,
-                             self.MODE_TILT_ANG),\
-            'Gyro mode should be MODE_GYRO_ANG, MODE_GYRO_G_A or MODE_TILT_ANG'
-        start_angle = self.value(0)
 
-        if direction_sensitive:
-            if delta > 0:
-                while (self.value(0) - start_angle) < delta:
-                    time.sleep(0.01)
-            else:
-                delta *= -1
-                while (start_angle - self.value(0)) < delta:
-                    time.sleep(0.01)
-        else:
-            while abs(start_angle - self.value(0)) < delta:
-                time.sleep(0.01)
+        pass
 
     def circle_angle(self):
         """
@@ -838,9 +814,8 @@ class InfraredSensor(Sensor, ButtonBase):
         super(InfraredSensor, self).__init__(address, name_pattern, name_exact, driver_name='lego-ev3-ir', **kwargs)
 
     def _normalize_channel(self, channel):
-        assert channel >= 1 and channel <= 4, "channel is %s, it must be 1, 2, 3, or 4" % channel
-        channel = max(1, min(4, channel)) - 1
-        return channel
+        pass
+
 
     @property
     def proximity(self):
@@ -848,65 +823,75 @@ class InfraredSensor(Sensor, ButtonBase):
         An estimate of the distance between the sensor and objects in front of
         it, as a percentage. 100% is approximately 70cm/27in.
         """
-        self._ensure_mode(self.MODE_IR_PROX)
-        return self.value(0)
+
+        pass
+
 
     def heading(self, channel=1):
         """
         Returns heading (-25, 25) to the beacon on the given channel.
         """
-        self._ensure_mode(self.MODE_IR_SEEK)
-        channel = self._normalize_channel(channel)
-        return self.value(channel * 2)
+
+        pass
+
 
     def distance(self, channel=1):
         """
         Returns distance (0, 100) to the beacon on the given channel.
         Returns None when beacon is not found.
         """
-        self._ensure_mode(self.MODE_IR_SEEK)
-        channel = self._normalize_channel(channel)
-        ret_value = self.value((channel * 2) + 1)
 
-        # The value will be -128 if no beacon is found, return None instead
-        return None if ret_value == -128 else ret_value
+        pass
+
 
     def heading_and_distance(self, channel=1):
         """
         Returns heading and distance to the beacon on the given channel as a
         tuple.
         """
-        return (self.heading(channel), self.distance(channel))
+
+        pass
+
 
     def top_left(self, channel=1):
         """
         Checks if ``top_left`` button is pressed.
         """
-        return 'top_left' in self.buttons_pressed(channel)
+
+        pass
+
 
     def bottom_left(self, channel=1):
         """
         Checks if ``bottom_left`` button is pressed.
         """
-        return 'bottom_left' in self.buttons_pressed(channel)
+
+        pass
+
 
     def top_right(self, channel=1):
         """
         Checks if ``top_right`` button is pressed.
         """
-        return 'top_right' in self.buttons_pressed(channel)
+
+        pass
+
 
     def bottom_right(self, channel=1):
         """
         Checks if ``bottom_right`` button is pressed.
         """
-        return 'bottom_right' in self.buttons_pressed(channel)
+
+        pass
+
 
     def beacon(self, channel=1):
         """
         Checks if ``beacon`` button is pressed.
         """
-        return 'beacon' in self.buttons_pressed(channel)
+
+        pass
+
 
     def buttons_pressed(self, channel=1):
         """
@@ -914,9 +899,9 @@ class InfraredSensor(Sensor, ButtonBase):
 
         Note that the sensor can only identify up to two buttons pressed at once.
         """
-        self._ensure_mode(self.MODE_IR_REMOTE)
-        channel = self._normalize_channel(channel)
-        return self._BUTTON_VALUES.get(self.value(channel), [])
+
+        pass
+
 
     def process(self):
         """
@@ -942,33 +927,8 @@ class InfraredSensor(Sensor, ButtonBase):
                 time.sleep(0.01)
 
         """
-        new_state = []
-        state_diff = []
 
-        for channel in range(1, 5):
-
-            for button in self.buttons_pressed(channel):
-                new_state.append((button, channel))
-
-                # Key was not pressed before but now is pressed
-                if (button, channel) not in self._state:
-                    state_diff.append((button, channel))
-
-            # Key was pressed but is no longer pressed
-            for button in self._BUTTONS:
-                if (button, channel) not in new_state and (button, channel) in self._state:
-                    state_diff.append((button, channel))
-
-        self._state = new_state
-
-        for (button, channel) in state_diff:
-            handler = getattr(self, 'on_channel' + str(channel) + '_' + button)
-
-            if handler is not None:
-                handler((button, channel) in new_state)
-
-        if self.on_change is not None and state_diff:
-            self.on_change([(button, channel, button in new_state) for (button, channel) in state_diff])
+        pass
 
 
 class SoundSensor(Sensor):
@@ -999,8 +959,9 @@ class SoundSensor(Sensor):
         A measurement of the measured sound pressure level, as a
         percent. Uses a flat weighting.
         """
-        self._ensure_mode(self.MODE_DB)
-        return self.value(0) * self._scale('DB')
+
+        pass
+
 
     @property
     def sound_pressure_low(self):
@@ -1008,8 +969,8 @@ class SoundSensor(Sensor):
         A measurement of the measured sound pressure level, as a
         percent. Uses A-weighting, which focuses on levels up to 55 dB.
         """
-        self._ensure_mode(self.MODE_DBA)
-        return self.value(0) * self._scale('DBA')
+
+        pass
 
 
 class LightSensor(Sensor):
@@ -1039,13 +1000,14 @@ class LightSensor(Sensor):
         """
         A measurement of the reflected light intensity, as a percentage.
         """
-        self._ensure_mode(self.MODE_REFLECT)
-        return self.value(0) * self._scale('REFLECT')
+
+        pass
+
 
     @property
     def ambient_light_intensity(self):
         """
         A measurement of the ambient light intensity, as a percentage.
         """
-        self._ensure_mode(self.MODE_AMBIENT)
-        return self.value(0) * self._scale('AMBIENT')
+
+        pass

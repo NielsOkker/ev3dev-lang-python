@@ -29,36 +29,15 @@ import stat
 import time
 import _thread
 from collections import OrderedDict
-from ev3dev2 import get_current_platform, Device
+from ev3dev2 import Device
 from ev3dev2.stopwatch import StopWatch
 from time import sleep
 
 if sys.version_info < (3, 4):
     raise SystemError('Must be using Python 3.4 or higher')
 
-# Import the LED settings, this is platform specific
-platform = get_current_platform()
-
-if platform == 'ev3':
-    from ev3dev2._platform.ev3 import LEDS, LED_GROUPS, LED_COLORS, LED_DEFAULT_COLOR
-
-elif platform == 'evb':
-    from ev3dev2._platform.evb import LEDS, LED_GROUPS, LED_COLORS, LED_DEFAULT_COLOR
-
-elif platform == 'pistorms':
-    from ev3dev2._platform.pistorms import LEDS, LED_GROUPS, LED_COLORS, LED_DEFAULT_COLOR
-
-elif platform == 'brickpi':
-    from ev3dev2._platform.brickpi import LEDS, LED_GROUPS, LED_COLORS, LED_DEFAULT_COLOR
-
-elif platform == 'brickpi3':
-    from ev3dev2._platform.brickpi3 import LEDS, LED_GROUPS, LED_COLORS, LED_DEFAULT_COLOR
-
-elif platform == 'fake':
-    from ev3dev2._platform.fake import LEDS, LED_GROUPS, LED_COLORS, LED_DEFAULT_COLOR
-
-else:
-    raise Exception("Unsupported platform '%s'" % platform)
+from ev3dev2._platform.ev3 import LEDS, LED_GROUPS, LED_COLORS, LED_DEFAULT_COLOR
+from ev3dev2simulator.connector.LedConnector import LedConnector
 
 
 class Led(Device):
@@ -78,17 +57,21 @@ class Led(Device):
         '_delay_on',
         '_delay_off',
         'desc',
+        'connector',
     ]
 
     def __init__(self, name_pattern=SYSTEM_DEVICE_NAME_CONVENTION, name_exact=False, desc=None, **kwargs):
         self.desc = desc
         super(Led, self).__init__(self.SYSTEM_CLASS_NAME, name_pattern, name_exact, **kwargs)
-        self._max_brightness = None
+        self._max_brightness = 1
         self._brightness = None
         self._triggers = None
         self._trigger = None
         self._delay_on = None
         self._delay_off = None
+
+        self.connector = LedConnector(name_pattern)
+
 
     def __str__(self):
         if self.desc:
@@ -101,20 +84,23 @@ class Led(Device):
         """
         Returns the maximum allowable brightness value.
         """
-        self._max_brightness, value = self.get_cached_attr_int(self._max_brightness, 'max_brightness')
-        return value
+
+        return self._max_brightness
+
 
     @property
     def brightness(self):
         """
         Sets the brightness level. Possible values are from 0 to ``max_brightness``.
         """
-        self._brightness, value = self.get_attr_int(self._brightness, 'brightness')
-        return value
+
+        return self._brightness
+
 
     @brightness.setter
     def brightness(self, value):
-        self._brightness = self.set_attr_int(self._brightness, 'brightness', value)
+        self._brightness = value
+
 
     @property
     def triggers(self):
@@ -142,36 +128,14 @@ class Led(Device):
         trigger. However, if you set the brightness value to 0 it will
         also disable the ``timer`` trigger.
         """
-        self._trigger, value = self.get_attr_from_set(self._trigger, 'trigger')
-        return value
+
+        pass
+
 
     @trigger.setter
     def trigger(self, value):
-        self._trigger = self.set_attr_string(self._trigger, 'trigger', value)
+        pass
 
-        # Workaround for ev3dev/ev3dev#225.
-        # When trigger is set to 'timer', we need to wait for 'delay_on' and
-        # 'delay_off' attributes to appear with correct permissions.
-        if value == 'timer':
-            for attr in ('delay_on', 'delay_off'):
-                path = self._path + '/' + attr
-
-                # Make sure the file has been created:
-                for _ in range(5):
-                    if os.path.exists(path):
-                        break
-                    time.sleep(0.2)
-                else:
-                    raise Exception('"{}" attribute has not been created'.format(attr))
-
-                # Make sure the file has correct permissions:
-                for _ in range(5):
-                    mode = stat.S_IMODE(os.stat(path)[stat.ST_MODE])
-                    if mode & stat.S_IRGRP and mode & stat.S_IWGRP:
-                        break
-                    time.sleep(0.2)
-                else:
-                    raise Exception('"{}" attribute has wrong permissions'.format(attr))
 
     @property
     def delay_on(self):
@@ -181,20 +145,8 @@ class Led(Device):
         be specified via ``delay_on`` attribute in milliseconds.
         """
 
-        # Workaround for ev3dev/ev3dev#225.
-        # 'delay_on' and 'delay_off' attributes are created when trigger is set
-        # to 'timer', and destroyed when it is set to anything else.
-        # This means the file cache may become outdated, and we may have to
-        # reopen the file.
-        for retry in (True, False):
-            try:
-                self._delay_on, value = self.get_attr_int(self._delay_on, 'delay_on')
-                return value
-            except OSError:
-                if retry:
-                    self._delay_on = None
-                else:
-                    raise
+        pass
+
 
     @delay_on.setter
     def delay_on(self, value):
@@ -203,15 +155,9 @@ class Led(Device):
         # to 'timer', and destroyed when it is set to anything else.
         # This means the file cache may become outdated, and we may have to
         # reopen the file.
-        for retry in (True, False):
-            try:
-                self._delay_on = self.set_attr_int(self._delay_on, 'delay_on', value)
-                return
-            except OSError:
-                if retry:
-                    self._delay_on = None
-                else:
-                    raise
+
+        pass
+
 
     @property
     def delay_off(self):
@@ -226,34 +172,20 @@ class Led(Device):
         # to 'timer', and destroyed when it is set to anything else.
         # This means the file cache may become outdated, and we may have to
         # reopen the file.
-        for retry in (True, False):
-            try:
-                self._delay_off, value = self.get_attr_int(self._delay_off, 'delay_off')
-                return value
-            except OSError:
-                if retry:
-                    self._delay_off = None
-                else:
-                    raise
+
+        pass
+
 
     @delay_off.setter
     def delay_off(self, value):
-        """
-        Workaround for ev3dev/ev3dev#225.
-        ``delay_on`` and ``delay_off`` attributes are created when trigger is set
-        to ``timer``, and destroyed when it is set to anything else.
-        This means the file cache may become outdated, and we may have to
-        reopen the file.
-        """
-        for retry in (True, False):
-            try:
-                self._delay_off = self.set_attr_int(self._delay_off, 'delay_off', value)
-                return
-            except OSError:
-                if retry:
-                    self._delay_off = None
-                else:
-                    raise
+        # Workaround for ev3dev/ev3dev#225.
+        # 'delay_on' and 'delay_off' attributes are created when trigger is set
+        # to 'timer', and destroyed when it is set to anything else.
+        # This means the file cache may become outdated, and we may have to
+        # reopen the file.
+
+        pass
+
 
     @property
     def brightness_pct(self):
@@ -265,6 +197,7 @@ class Led(Device):
     @brightness_pct.setter
     def brightness_pct(self, value):
         self.brightness = value * self.max_brightness
+        self.connector.enable(self.brightness)
 
 
 class Leds(object):
