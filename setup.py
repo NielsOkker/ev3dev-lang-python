@@ -20,8 +20,11 @@ setup(
     packages=['ev3dev2',
               'ev3dev2.fonts',
               'ev3dev2.sensor',
-              'ev3dev2.control',
+              # 'ev3dev2.control',
+              'ev3dev2.connector',
+              'ev3dev2.connector.message',
+              'ev3dev2.util',
               'ev3dev2._platform'],
-    package_data={'': ['*.pil', '*.pbm']},
-    install_requires=['Pillow']
+    package_data={'': ['*.pil', '*.pbm', '*.yaml']},
+    install_requires=['Pillow', 'PyYAML', 'simpleaudio', 'pyttsx3', 'numpy']
     )
