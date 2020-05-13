@@ -16,6 +16,7 @@ setup(name='python-ev3dev2',
       include_package_data=True,
       long_description=long_description,
       long_description_content_type='text/x-rst',
-      packages=['ev3dev2', 'ev3dev2.fonts', 'ev3dev2.sensor', 'ev3dev2.control', 'ev3dev2._platform'],
-      package_data={'': ['*.pil', '*.pbm']},
-      install_requires=['Pillow'])
+      packages=['ev3dev2', 'ev3dev2.fonts', 'ev3dev2.sensor', 'ev3dev2._platform',
+                'ev3dev2.connector', 'ev3dev2.connector.message','ev3dev2.util'],
+      package_data={'': ['*.pil', '*.pbm', '*.yaml']},
+      install_requires=['Pillow', 'PyYAML', 'simpleaudio', 'pyttsx3', 'numpy'])

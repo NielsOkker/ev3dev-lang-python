@@ -37,7 +37,9 @@ if sys.version_info < (3, 4):
     raise SystemError('Must be using Python 3.4 or higher')
 
 from ev3dev2._platform.ev3 import LEDS, LED_GROUPS, LED_COLORS, LED_DEFAULT_COLOR
-from ev3dev2simulator.connector.LedConnector import LedConnector
+
+from ev3dev2.connector.LedConnector import LedConnector
+
 
 
 class Led(Device):

@@ -30,8 +30,8 @@ import logging
 import time
 from ev3dev2.button import ButtonBase
 from ev3dev2.sensor import Sensor
-from ev3dev2simulator.connector.SensorConnector import SensorConnector
-from ev3dev2simulator.util.Util import get_cm_multiplier, get_inch_multiplier
+from ev3dev2.connector.SensorConnector import SensorConnector
+from ev3dev2.util.Util import get_cm_multiplier, get_inch_multiplier
 
 if sys.version_info < (3, 4):
     raise SystemError('Must be using Python 3.4 or higher')

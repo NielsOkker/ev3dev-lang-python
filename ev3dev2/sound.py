@@ -29,7 +29,7 @@ import re
 from time import sleep
 from ev3dev2 import is_micropython
 
-from ev3dev2simulator.connector.SoundConnector import SoundConnector
+from ev3dev2.connector.SoundConnector import SoundConnector
 
 if sys.version_info < (3, 4):
     raise SystemError('Must be using Python 3.4 or higher')
